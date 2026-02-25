@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🍎 Apple Merchant Idle</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="era-wood">
+    <div id="app">
+        <!-- 画面エフェクト用 -->
+        <div id="fever-overlay"></div>
+
+        <!-- ヘッダー（ステータス表示） -->
+        <header id="header">
+            <div class="status-row main-currency">
+                <span class="icon">💰</span>
+                <span id="gold-display" class="value">0</span>
+            </div>
+            <div class="status-row sub-status">
+                <div class="stat-box">
+                    <span class="label">生産</span>
+                    <span id="ps-display" class="value">0 /s</span>
+                </div>
+                <div class="stat-box">
+                    <span class="label">時代</span>
+                    <span id="era-display" class="value text-highlight">木</span>
+                </div>
+                <div class="stat-box" id="seeds-container" style="display: none;">
+                    <span class="label">種 🌱</span>
+                    <span id="seeds-display" class="value">0</span>
+                </div>
+            </div>
+            <div class="fever-container">
+                <div class="fever-label">FEVER <span id="fever-status"></span></div>
+                <div class="fever-bar-bg">
+                    <div id="fever-bar" class="fever-bar-fill"></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- メイン画面（タップ領域） -->
+        <main id="game-area">
+            <!-- 上部: リンゴ -->
+            <div id="apple-section">
+                <div id="floating-texts-container"></div>
+                <button id="big-apple" class="big-apple-btn">
+                    <div class="apple-img"></div>
+                </button>
+                <div class="apple-counter">
+                    <span id="apples-display">0</span> <span class="apple-unit">🍎</span>
+                </div>
+            </div>
+
+            <!-- 下部: 店ビジュアル -->
+            <div id="shop-section">
+                <div id="shop-container">
+                    <div class="shop-building" id="shop-building"></div>
+                </div>
+            </div>
+
+            <div id="conversion-toast" class="toast">自動換金: 10🍎 → 1💰</div>
+
+            <button id="golden-apple" class="golden-apple-btn" style="display: none;">🌟🍎🌟</button>
+        </main>
+
+        <!-- タブナビゲーション -->
+        <nav id="tabs">
+            <button class="tab-btn active" data-target="panel-building">🔨 建築</button>
+            <button class="tab-btn" data-target="panel-evolution">✨ 進化</button>
+            <button class="tab-btn" data-target="panel-casino">🎰 カジノ</button>
+            <button class="tab-btn" data-target="panel-prestige" id="tab-prestige" style="display: none;">🌀 転生</button>
+        </nav>
+
+        <!-- パネル領域 -->
+        <section id="panels">
+            <!-- 建築パネル -->
+            <div id="panel-building" class="panel active">
+                <div class="panel-header">施設一覧 (生産量UP)</div>
+                <div id="buildings-list" class="list-container">
+                    <!-- JSで動的に生成 -->
+                </div>
+            </div>
+
+            <!-- 進化パネル -->
+            <div id="panel-evolution" class="panel">
+                <div class="panel-header">次の時代へ進化 (生産・換金効率UP)</div>
+                <div class="evolution-info">
+                    <p>現在の累計Gold: <span id="total-gold-display">0</span> 💰</p>
+                    <div id="next-era-info" class="next-era-box">
+                        <div class="era-title">次の時代: <span id="next-era-name">石</span></div>
+                        <div class="era-req">必要累計Gold: <span id="next-era-req">5,000</span></div>
+                        <ul class="era-bonuses">
+                            <li>生産力 x1.5</li>
+                            <li>カジノ期待値 +5%</li>
+                            <li>5分間 生産x2ブースト</li>
+                        </ul>
+                        <button id="btn-evolve" class="action-btn" disabled>進化する</button>
+                    </div>
+                    <div id="max-era-info" class="next-era-box" style="display:none;">
+                        <div class="era-title">最終時代に到達しました！</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- カジノ タブ -->
+            <div id="panel-casino" class="panel">
+                <div class="panel-header">カジノ (所持Goldの3%をベット)</div>
+                <div class="casino-container">
+                    <div class="casino-info">
+                        <span>期待値: <span id="casino-ev">0.80</span>x</span>
+                        <span>最高配当: 20x (<span id="casino-max-chance">0.5</span>%)</span>
+                    </div>
+                    <div class="casino-info">
+                        <span>ベット額: <span id="bet-amount">0</span> 💰</span>
+                    </div>
+                    <div class="slot-machine">
+                        <div class="slot-display" id="slot-display">🎰 スピン! 🎰</div>
+                    </div>
+                    <button id="btn-spin" class="action-btn">スピン！</button>
+                    <div class="log-container" id="casino-log"></div>
+                </div>
+            </div>
+
+            <!-- 転生 タブ -->
+            <div id="panel-prestige" class="panel">
+                <div class="panel-header">転生 (強くてニューゲーム)</div>
+                <div id="prestige-info" class="prestige-info">
+                    <div class="warning-text">※黄金時代かつ累計1,000,000 Gold以上で可能</div>
+                    <button id="btn-prestige" class="action-btn" disabled>転生する</button>
+                    <div class="prestige-bonuses">
+                        <p style="margin-top:10px; font-size:12px; color:var(--text-secondary);">転生ボーナス:</p>
+                        <ul>
+                            <li>生産力強化</li>
+                            <li>タップ強化</li>
+                            <li>カジノ期待値UP</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 通知UI -->
+        <div id="notification-area"></div>
+
+    </div>
+
+    <script src="main.js"></script>
+</body>
+
+</html>
