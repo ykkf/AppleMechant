@@ -50,6 +50,27 @@ body.era-cosmic {
     --era-btn: #8e44ad;
 }
 
+body.era-dimension {
+    --era-bg-top: #0a1628;
+    --era-bg-bottom: #050d1a;
+    --era-accent: #00d4ff;
+    --era-btn: #0099cc;
+}
+
+body.era-myth {
+    --era-bg-top: #2a1a00;
+    --era-bg-bottom: #1a0f00;
+    --era-accent: #ffd700;
+    --era-btn: #daa520;
+}
+
+body.era-transcend {
+    --era-bg-top: #1a0020;
+    --era-bg-bottom: #0a000f;
+    --era-accent: #ff6bff;
+    --era-btn: #cc44cc;
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -337,6 +358,32 @@ body.era-gold .shop-building {
 body.era-cosmic .shop-building {
     background-image: url('shop_cosmic.png');
     filter: drop-shadow(0 5px 15px rgba(155, 89, 182, 0.6));
+}
+
+body.era-dimension .shop-building {
+    background-image: url('shop_dimension.png');
+    filter: drop-shadow(0 5px 15px rgba(0, 212, 255, 0.6));
+}
+
+body.era-myth .shop-building {
+    background-image: url('shop_myth.png');
+    filter: drop-shadow(0 5px 15px rgba(255, 215, 0, 0.6));
+}
+
+body.era-transcend .shop-building {
+    background-image: url('shop_transcend.png');
+    filter: drop-shadow(0 5px 20px rgba(255, 107, 255, 0.8));
+    animation: transcendGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes transcendGlow {
+    0% {
+        filter: drop-shadow(0 5px 15px rgba(255, 107, 255, 0.6));
+    }
+
+    100% {
+        filter: drop-shadow(0 5px 25px rgba(100, 200, 255, 0.8));
+    }
 }
 
 /* Era upgrade animation */
@@ -1065,4 +1112,50 @@ body.era-cosmic .shop-building {
 
 .ach-status {
     font-size: 18px;
+}
+
+/* === Seed Shop === */
+.seed-shop {
+    margin-top: 10px;
+}
+
+.seed-upgrade-item {
+    display: flex;
+    background: rgba(124, 252, 0, 0.05);
+    border: 1px solid rgba(124, 252, 0, 0.2);
+    border-radius: 6px;
+    padding: 10px;
+    align-items: center;
+    gap: 15px;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.seed-upgrade-item:hover:not(.disabled):not(.seed-upgrade-maxed) {
+    background: rgba(124, 252, 0, 0.1);
+    border-color: rgba(124, 252, 0, 0.4);
+}
+
+.seed-upgrade-item.disabled {
+    opacity: 0.5;
+}
+
+.seed-upgrade-maxed {
+    background: rgba(255, 215, 0, 0.08);
+    border-color: rgba(255, 215, 0, 0.3);
+}
+
+.seed-upgrade-maxed .b-count {
+    background: var(--gold-color);
+    color: #000;
+}
+
+.seed-buy-btn:disabled {
+    background: #555 !important;
+    color: #888 !important;
+}
+
+.seed-upgrade-maxed .seed-buy-btn {
+    background: var(--gold-color) !important;
+    color: #000 !important;
+    font-weight: bold;
 }

@@ -7,7 +7,19 @@ const ERAS = [
     { name: "石", class: "era-stone", reqTotalGold: 5000, mult: 1.5, convertRate: 8, casinoEv: 0.85 },
     { name: "鉄", class: "era-iron", reqTotalGold: 50000, mult: 2.2, convertRate: 5, casinoEv: 0.90 },
     { name: "黄金", class: "era-gold", reqTotalGold: 500000, mult: 3.5, convertRate: 3, casinoEv: 0.95 },
-    { name: "宇宙", class: "era-cosmic", reqTotalGold: 5000000, mult: 5.0, convertRate: 2, casinoEv: 1.00 }
+    { name: "宇宙", class: "era-cosmic", reqTotalGold: 5000000, mult: 5.0, convertRate: 2, casinoEv: 1.00 },
+    { name: "次元", class: "era-dimension", reqTotalGold: 50000000, mult: 8.0, convertRate: 1.5, casinoEv: 1.05 },
+    { name: "神話", class: "era-myth", reqTotalGold: 500000000, mult: 12.0, convertRate: 1.2, casinoEv: 1.10 },
+    { name: "超越", class: "era-transcend", reqTotalGold: 10000000000, mult: 20.0, convertRate: 1, casinoEv: 1.15 }
+];
+
+const SEED_UPGRADES = [
+    { id: 'harvest', name: '豊穣の種', icon: '🌿', desc: '生産力 +20%', cost: 3, maxLevel: 5, effect: 0.20 },
+    { id: 'thunder', name: '雷の種', icon: '⚡', desc: 'タップ力 +30%', cost: 2, maxLevel: 5, effect: 0.30 },
+    { id: 'lucky', name: '幸運の種', icon: '🎯', desc: 'クリティカル率 +3%', cost: 5, maxLevel: 3, effect: 0.03 },
+    { id: 'golden', name: '黄金の種', icon: '🎰', desc: 'カジノ期待値 +5%', cost: 4, maxLevel: 3, effect: 0.05 },
+    { id: 'apple', name: 'リンゴの種', icon: '🍎', desc: '換金レート改善 -1', cost: 6, maxLevel: 2, effect: 1 },
+    { id: 'flame', name: '炎の種', icon: '🔥', desc: 'フィーバー +3秒', cost: 3, maxLevel: 3, effect: 3 }
 ];
 
 const INITIAL_BUILDINGS = {
@@ -41,6 +53,7 @@ function getInitialGs() {
         gold: 0,
         totalGold: 0,
         seeds: 0,
+        seedUpgrades: {},
         eraIndex: 0,
         buildings: JSON.parse(JSON.stringify(INITIAL_BUILDINGS)),
         fever: 0,
@@ -161,8 +174,10 @@ function saveGame() {
 
 function resetPlaythrough() {
     const seeds = gs.seeds;
+    const seedUpgrades = gs.seedUpgrades || {};
     gs = getInitialGs();
     gs.seeds = seeds;
+    gs.seedUpgrades = seedUpgrades;
     el.body.className = ERAS[0].class;
     el.tabPrestige.style.display = 'none';
     el.tabs.forEach(t => t.classList.remove('active'));
@@ -185,8 +200,18 @@ function calculateBuildingProduction() {
 }
 
 function getEraMult() { return ERAS[gs.eraIndex].mult; }
-function getSeedMult() { return 1 + gs.seeds * 0.05; }
-function getConvertRate() { return ERAS[gs.eraIndex].convertRate; }
+function getSeedMult() {
+    let mult = 1 + gs.seeds * 0.05;
+    const harvestLv = (gs.seedUpgrades && gs.seedUpgrades.harvest) || 0;
+    mult *= (1 + harvestLv * 0.20);
+    return mult;
+}
+function getConvertRate() {
+    let rate = ERAS[gs.eraIndex].convertRate;
+    const appleLv = (gs.seedUpgrades && gs.seedUpgrades.apple) || 0;
+    rate = Math.max(1, rate - appleLv * 1);
+    return rate;
+}
 
 // --- Shop Visuals ---
 
@@ -220,14 +245,25 @@ function getTapPower() {
         baseTap += gs.buildings.farmer.tapBonus * gs.buildings.farmer.count;
     }
     let power = baseTap * (1 + 0.02 * gs.seeds);
+    const thunderLv = (gs.seedUpgrades && gs.seedUpgrades.thunder) || 0;
+    power *= (1 + thunderLv * 0.30);
     if (gs.feverActive) power *= FEVER_MULT;
     return power;
 }
 
 function getCritChance() {
     let chance = 0.05 + 0.001 * gs.seeds;
+    const luckyLv = (gs.seedUpgrades && gs.seedUpgrades.lucky) || 0;
+    chance += luckyLv * 0.03;
     if (gs.feverActive) chance += 0.15;
     return Math.min(1.0, chance);
+}
+
+function getFeverDuration() {
+    let dur = FEVER_DURATION;
+    const flameLv = (gs.seedUpgrades && gs.seedUpgrades.flame) || 0;
+    dur += flameLv * 3;
+    return dur;
 }
 
 // --- Shop Visuals ---
@@ -308,7 +344,7 @@ function addFever(amount) {
     gs.fever = Math.min(MAX_FEVER, gs.fever + amount);
     if (gs.fever >= MAX_FEVER) {
         gs.feverActive = true;
-        gs.feverTimeLeft = FEVER_DURATION;
+        gs.feverTimeLeft = getFeverDuration();
         gs.fever = MAX_FEVER;
         showNotification('🔥 フィーバータイム！ 🔥', 'fever');
     }
@@ -378,6 +414,54 @@ function tryPrestige() {
     saveGame();
 }
 
+// --- Seed Shop ---
+function buySeedUpgrade(id) {
+    const upgrade = SEED_UPGRADES.find(u => u.id === id);
+    if (!upgrade) return;
+    if (!gs.seedUpgrades) gs.seedUpgrades = {};
+    const currentLv = gs.seedUpgrades[id] || 0;
+    if (currentLv >= upgrade.maxLevel) return;
+    const cost = upgrade.cost + currentLv * Math.ceil(upgrade.cost * 0.5);
+    if (gs.seeds < cost) return;
+    gs.seeds -= cost;
+    gs.seedUpgrades[id] = currentLv + 1;
+    showNotification(`🌱 ${upgrade.icon} ${upgrade.name} Lv.${currentLv + 1} を習得!`, 'prestige');
+    if ('vibrate' in navigator) navigator.vibrate([30, 20, 30]);
+    renderSeedShop();
+    updateUI();
+    saveGame();
+}
+
+function renderSeedShop() {
+    const list = document.getElementById('seed-shop-list');
+    if (!list) return;
+    list.innerHTML = '';
+    for (const u of SEED_UPGRADES) {
+        const lv = (gs.seedUpgrades && gs.seedUpgrades[u.id]) || 0;
+        const maxed = lv >= u.maxLevel;
+        const cost = u.cost + lv * Math.ceil(u.cost * 0.5);
+        const canBuy = !maxed && gs.seeds >= cost;
+        const div = document.createElement('div');
+        div.className = `seed-upgrade-item ${maxed ? 'seed-upgrade-maxed' : ''} ${!canBuy && !maxed ? 'disabled' : ''}`;
+        div.innerHTML = `
+            <div class="b-icon">${u.icon}</div>
+            <div class="b-info">
+                <div class="b-name">${u.name} <span class="b-count">Lv.${lv}/${u.maxLevel}</span></div>
+                <div class="b-desc">${u.desc}</div>
+            </div>
+            <div class="b-action">
+                <button class="action-btn seed-buy-btn" style="margin:0; padding:6px; font-size:13px;" ${!canBuy ? 'disabled' : ''}>
+                    ${maxed ? 'MAX' : `${cost} 🌱`}
+                </button>
+            </div>
+        `;
+        if (!maxed) {
+            div.querySelector('.seed-buy-btn').addEventListener('click', () => buySeedUpgrade(u.id));
+        }
+        list.appendChild(div);
+    }
+}
+
 // --- Casino ---
 const CASINO_PAYOUTS = [
     { mult: 20, weight: 0.5, label: '🍎🍎🍎 JACKPOT!' },
@@ -391,7 +475,9 @@ let casinoSpinning = false;
 function getCasinoEv() {
     let ev = ERAS[gs.eraIndex].casinoEv;
     ev += gs.seeds * 0.01; // +1% per seed
-    return Math.min(ev, 1.2);
+    const goldenLv = (gs.seedUpgrades && gs.seedUpgrades.golden) || 0;
+    ev += goldenLv * 0.05;
+    return Math.min(ev, 1.5);
 }
 
 function getBetAmount() {
@@ -547,7 +633,8 @@ function updateUI() {
     el.totalGold.textContent = formatNum(gs.totalGold);
 
     // Fever bar
-    const feverPct = gs.feverActive ? (gs.feverTimeLeft / FEVER_DURATION * 100) : (gs.fever / MAX_FEVER * 100);
+    const feverDur = getFeverDuration();
+    const feverPct = gs.feverActive ? (gs.feverTimeLeft / feverDur * 100) : (gs.fever / MAX_FEVER * 100);
     el.feverBar.style.width = `${feverPct}%`;
     el.feverBar.parentElement.parentElement.className = gs.feverActive ? 'fever-container fever-active' : 'fever-container';
 
@@ -682,9 +769,12 @@ function setupEventListeners() {
             // Open sheet
             openSheet();
 
-            // Render achievements when opening that tab
+            // Render dynamic content when opening tabs
             if (targetId === 'panel-achievements') {
                 renderAchievements();
+            }
+            if (targetId === 'panel-prestige') {
+                renderSeedShop();
             }
         });
     });
@@ -758,10 +848,15 @@ const ACHIEVEMENTS = [
     { id: 'eraIron', name: '鉄の意志', desc: '鉄の時代に到達', icon: '⚙️', check: () => gs.eraIndex >= 2 },
     { id: 'eraGold', name: '黄金の王', desc: '黄金の時代に到達', icon: '👑', check: () => gs.eraIndex >= 3 },
     { id: 'eraCosmic', name: '宇宙の支配者', desc: '宇宙の時代に到達', icon: '🚀', check: () => gs.eraIndex >= 4 },
+    { id: 'eraDimension', name: '次元を超えし者', desc: '次元の時代に到達', icon: '🌌', check: () => gs.eraIndex >= 5 },
+    { id: 'eraMyth', name: '神話の創造者', desc: '神話の時代に到達', icon: '🔮', check: () => gs.eraIndex >= 6 },
+    { id: 'eraTranscend', name: '超越者', desc: '超越の時代に到達', icon: '♾️', check: () => gs.eraIndex >= 7 },
     { id: 'gold10k', name: '小金持ち', desc: '累計10,000 Gold獲得', icon: '💰', check: () => gs.totalGold >= 10000 },
     { id: 'gold1m', name: '大富豪', desc: '累計1,000,000 Gold獲得', icon: '💸', check: () => gs.totalGold >= 1000000 },
+    { id: 'gold1b', name: '財閥', desc: '累計1,000,000,000 Gold獲得', icon: '🏦', check: () => gs.totalGold >= 1000000000 },
     { id: 'jackpot', name: '一検千金', desc: 'カジノでジャックポット', icon: '🎰', check: () => (gs.totalJackpots || 0) >= 1 },
     { id: 'prestige1', name: '輪廻転生', desc: '初めての転生', icon: '🌀', check: () => gs.seeds > 0 },
+    { id: 'seedUpgrade1', name: '種の力', desc: '種アップグレードを1つ購入', icon: '🌱', check: () => { if (!gs.seedUpgrades) return false; return Object.values(gs.seedUpgrades).some(v => v > 0); } },
     { id: 'fever10', name: 'フィーバーマニア', desc: 'フィーバーを発動', icon: '🔥', check: () => gs.feverActive || gs.feverCooldown > 0 || (gs.totalTaps || 0) >= 50 }
 ];
 
