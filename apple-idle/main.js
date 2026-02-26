@@ -6,7 +6,8 @@ const ERAS = [
     { name: "木", class: "era-wood", reqTotalGold: 0, mult: 1.0, convertRate: 10, casinoEv: 0.80 },
     { name: "石", class: "era-stone", reqTotalGold: 5000, mult: 1.5, convertRate: 8, casinoEv: 0.85 },
     { name: "鉄", class: "era-iron", reqTotalGold: 50000, mult: 2.2, convertRate: 5, casinoEv: 0.90 },
-    { name: "黄金", class: "era-gold", reqTotalGold: 500000, mult: 3.5, convertRate: 3, casinoEv: 0.95 }
+    { name: "黄金", class: "era-gold", reqTotalGold: 500000, mult: 3.5, convertRate: 3, casinoEv: 0.95 },
+    { name: "宇宙", class: "era-cosmic", reqTotalGold: 5000000, mult: 5.0, convertRate: 2, casinoEv: 1.00 }
 ];
 
 const INITIAL_BUILDINGS = {
@@ -14,7 +15,11 @@ const INITIAL_BUILDINGS = {
     cart: { id: "cart", name: "荷車", icon: "🛒", basePrice: 25, baseProd: 1, tapBonus: 0, count: 0 },
     hut: { id: "hut", name: "小屋", icon: "🛖", basePrice: 80, baseProd: 5, tapBonus: 0, count: 0 },
     plantation: { id: "plantation", name: "大農園", icon: "🌴", basePrice: 1000, baseProd: 50, tapBonus: 0, count: 0 },
-    guild: { id: "guild", name: "ギルド", icon: "🏰", basePrice: 10000, baseProd: 500, tapBonus: 0, count: 0 }
+    guild: { id: "guild", name: "ギルド", icon: "🏰", basePrice: 10000, baseProd: 500, tapBonus: 0, count: 0 },
+    factory: { id: "factory", name: "工場", icon: "🏭", basePrice: 80000, baseProd: 3000, tapBonus: 0, count: 0 },
+    lab: { id: "lab", name: "研究所", icon: "🔬", basePrice: 500000, baseProd: 10000, tapBonus: 0, count: 0 },
+    observatory: { id: "observatory", name: "天文台", icon: "🔭", basePrice: 3000000, baseProd: 25000, tapBonus: 0, count: 0 },
+    portal: { id: "portal", name: "次元門", icon: "🌀", basePrice: 20000000, baseProd: 50000, tapBonus: 0, count: 0 }
 };
 
 // --- Constants ---
@@ -44,7 +49,10 @@ function getInitialGs() {
         feverCooldown: 0,
         eraBoostTimeLeft: 0,
         casinoCooldown: false,
-        lastTick: Date.now()
+        lastTick: Date.now(),
+        totalTaps: 0,
+        totalJackpots: 0,
+        achievements: {}
     };
 }
 
@@ -96,6 +104,7 @@ function init() {
     loadSave();
     setupEventListeners();
     renderBuildings();
+    checkAchievements();
     updateUI();
 
     setInterval(gameLoop, TICK_RATE);
@@ -194,6 +203,7 @@ function calculateTotalPS() {
     let prod = calculateBuildingProduction();
     prod *= getEraMult();
     prod *= getSeedMult();
+    prod *= getAchievementBonus();
     if (gs.feverActive) prod *= FEVER_MULT;
     if (gs.eraBoostTimeLeft > 0) prod *= ERA_BOOST_MULT;
     return prod;
@@ -249,6 +259,7 @@ function handleTap(e) {
     }
 
     gs.apples += tapPower;
+    gs.totalTaps = (gs.totalTaps || 0) + 1;
     addFever(2);
 
     showFloatingText(
@@ -257,7 +268,39 @@ function handleTap(e) {
         isCrit
     );
 
+    // Spawn particles
+    spawnTapParticles(e, isCrit);
+
+    checkAchievements();
     updateUI();
+}
+
+function spawnTapParticles(e, isCrit) {
+    const container = el.floatContainer;
+    const count = isCrit ? 12 : 5;
+    const emojis = isCrit ? ['🌟', '✨', '💥', '🍎'] : ['🍎', '✨', '🍃'];
+    let cx = window.innerWidth / 2;
+    let cy = window.innerHeight * 0.35;
+    if (e && (e.clientX !== undefined || e.touches)) {
+        cx = e.touches ? e.touches[0].clientX : e.clientX;
+        cy = e.touches ? e.touches[0].clientY : e.clientY;
+    }
+    for (let i = 0; i < count; i++) {
+        const p = document.createElement('div');
+        p.className = 'tap-particle';
+        p.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 40 + Math.random() * 80;
+        const dx = Math.cos(angle) * dist;
+        const dy = Math.sin(angle) * dist;
+        p.style.left = `${cx}px`;
+        p.style.top = `${cy}px`;
+        p.style.setProperty('--dx', `${dx}px`);
+        p.style.setProperty('--dy', `${dy}px`);
+        p.style.fontSize = isCrit ? `${16 + Math.random() * 16}px` : `${12 + Math.random() * 10}px`;
+        container.appendChild(p);
+        setTimeout(() => p.remove(), 800);
+    }
 }
 
 function addFever(amount) {
@@ -295,8 +338,32 @@ function tryEvolve() {
         gs.eraBoostTimeLeft = ERA_BOOST_DURATION;
         el.body.className = nextEra.class;
         triggerShopUpgradeAnimation();
+        spawnConfetti();
         showNotification(`✨ ${nextEra.name}の時代に進化! お店がアップグレード! ✨`, 'evolution');
+        if ('vibrate' in navigator) navigator.vibrate([100, 50, 100, 50, 200]);
+        checkAchievements();
         updateUI();
+    }
+}
+
+function spawnConfetti() {
+    const container = el.floatContainer;
+    const colors = ['#ffd700', '#ff4b4b', '#7cfc00', '#00bfff', '#ff69b4', '#fff'];
+    const shapes = ['✨', '🌟', '🎉', '🎊', '⭐'];
+    for (let i = 0; i < 30; i++) {
+        const p = document.createElement('div');
+        p.className = 'confetti-particle';
+        p.textContent = shapes[Math.floor(Math.random() * shapes.length)];
+        const x = Math.random() * window.innerWidth * 0.8 + window.innerWidth * 0.1;
+        const startY = window.innerHeight * 0.2 + Math.random() * window.innerHeight * 0.3;
+        p.style.left = `${x}px`;
+        p.style.top = `${startY}px`;
+        p.style.setProperty('--dx', `${(Math.random() - 0.5) * 100}px`);
+        p.style.setProperty('--fall', `${100 + Math.random() * 200}px`);
+        p.style.fontSize = `${14 + Math.random() * 18}px`;
+        p.style.animationDelay = `${Math.random() * 0.5}s`;
+        container.appendChild(p);
+        setTimeout(() => p.remove(), 2000);
     }
 }
 
@@ -394,10 +461,12 @@ function spinCasino() {
             if (result.mult >= 20) {
                 showNotification(`🎰 JACKPOT! +${formatNum(payout)} 💰!`, 'golden');
                 if ('vibrate' in navigator) navigator.vibrate([100, 50, 100, 50, 100]);
+                gs.totalJackpots = (gs.totalJackpots || 0) + 1;
             } else if (result.mult >= 5) {
                 showNotification(`🎰 大当たり! +${formatNum(payout)} 💰`, 'success');
             }
 
+            checkAchievements();
             updateUI();
             casinoSpinning = false;
         }
@@ -571,16 +640,60 @@ function setupEventListeners() {
     el.bigApple.addEventListener('click', handleTap);
     el.bigApple.addEventListener('touchstart', (e) => { e.preventDefault(); handleTap(e); }, { passive: false });
 
-    // Tabs
-    el.tabs.forEach(tab => {
+    // Tabs & Bottom Sheet
+    const sheetOverlay = document.getElementById('sheet-overlay');
+    const bottomSheet = document.getElementById('bottom-sheet');
+    const closeSheetBtn = document.getElementById('btn-close-sheet');
+    const tabs = document.querySelectorAll('.tab-btn');
+    const panels = document.querySelectorAll('.panel');
+
+    function closeSheet() {
+        bottomSheet.classList.remove('open');
+        sheetOverlay.classList.remove('active');
+        tabs.forEach(t => t.classList.remove('active'));
+    }
+
+    function openSheet() {
+        bottomSheet.classList.add('open');
+        sheetOverlay.classList.add('active');
+    }
+
+    tabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            el.tabs.forEach(t => t.classList.remove('active'));
-            el.panels.forEach(p => p.classList.remove('active'));
+            const targetId = tab.dataset.target;
+
+            // If already active, close it
+            if (tab.classList.contains('active')) {
+                closeSheet();
+                return;
+            }
+
+            // Update active tab
+            tabs.forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            const target = document.getElementById(tab.dataset.target);
-            if (target) target.classList.add('active');
+
+            // Update active panel
+            panels.forEach(p => p.classList.remove('active'));
+            const targetPanel = document.getElementById(targetId);
+            if (targetPanel) {
+                targetPanel.classList.add('active');
+            }
+
+            // Open sheet
+            openSheet();
+
+            // Render achievements when opening that tab
+            if (targetId === 'panel-achievements') {
+                renderAchievements();
+            }
         });
     });
+
+    sheetOverlay.addEventListener('click', closeSheet);
+    closeSheetBtn.addEventListener('click', closeSheet);
+
+    // Initial state: hide panels until a tab is clicked
+    panels.forEach(p => p.classList.remove('active'));
 
     // Evolution
     el.btnEvolve.addEventListener('click', tryEvolve);
@@ -633,4 +746,66 @@ function showNotification(msg, type = 'info') {
         note.style.opacity = '0';
         setTimeout(() => note.remove(), 500);
     }, 3000);
+}
+
+// --- Achievement System ---
+
+const ACHIEVEMENTS = [
+    { id: 'tap100', name: 'お試しタップ', desc: '100回タップ', icon: '👌', check: () => (gs.totalTaps || 0) >= 100 },
+    { id: 'tap1000', name: 'タップ職人', desc: '1,000回タップ', icon: '👏', check: () => (gs.totalTaps || 0) >= 1000 },
+    { id: 'tap10000', name: 'タップマスター', desc: '10,000回タップ', icon: '✨', check: () => (gs.totalTaps || 0) >= 10000 },
+    { id: 'eraStone', name: '石の先駆者', desc: '石の時代に到達', icon: '🪨', check: () => gs.eraIndex >= 1 },
+    { id: 'eraIron', name: '鉄の意志', desc: '鉄の時代に到達', icon: '⚙️', check: () => gs.eraIndex >= 2 },
+    { id: 'eraGold', name: '黄金の王', desc: '黄金の時代に到達', icon: '👑', check: () => gs.eraIndex >= 3 },
+    { id: 'eraCosmic', name: '宇宙の支配者', desc: '宇宙の時代に到達', icon: '🚀', check: () => gs.eraIndex >= 4 },
+    { id: 'gold10k', name: '小金持ち', desc: '累計10,000 Gold獲得', icon: '💰', check: () => gs.totalGold >= 10000 },
+    { id: 'gold1m', name: '大富豪', desc: '累計1,000,000 Gold獲得', icon: '💸', check: () => gs.totalGold >= 1000000 },
+    { id: 'jackpot', name: '一検千金', desc: 'カジノでジャックポット', icon: '🎰', check: () => (gs.totalJackpots || 0) >= 1 },
+    { id: 'prestige1', name: '輪廻転生', desc: '初めての転生', icon: '🌀', check: () => gs.seeds > 0 },
+    { id: 'fever10', name: 'フィーバーマニア', desc: 'フィーバーを発動', icon: '🔥', check: () => gs.feverActive || gs.feverCooldown > 0 || (gs.totalTaps || 0) >= 50 }
+];
+
+function getAchievementBonus() {
+    let count = 0;
+    for (const a of ACHIEVEMENTS) {
+        if (gs.achievements && gs.achievements[a.id]) count++;
+    }
+    return 1 + count * 0.02; // +2% per achievement
+}
+
+function checkAchievements() {
+    if (!gs.achievements) gs.achievements = {};
+    for (const a of ACHIEVEMENTS) {
+        if (!gs.achievements[a.id] && a.check()) {
+            gs.achievements[a.id] = Date.now();
+            showNotification(`🏆 実績解除！「${a.name}」(生産力+2%)`, 'achievement');
+            spawnConfetti();
+            if ('vibrate' in navigator) navigator.vibrate([50, 30, 50]);
+        }
+    }
+}
+
+function renderAchievements() {
+    const list = document.getElementById('achievements-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const unlocked = ACHIEVEMENTS.filter(a => gs.achievements && gs.achievements[a.id]).length;
+    const header = document.createElement('div');
+    header.className = 'achievement-summary';
+    header.innerHTML = `<span>解除: ${unlocked} / ${ACHIEVEMENTS.length}</span><span>ボーナス: +${unlocked * 2}%</span>`;
+    list.appendChild(header);
+    for (const a of ACHIEVEMENTS) {
+        const done = gs.achievements && gs.achievements[a.id];
+        const div = document.createElement('div');
+        div.className = `achievement-item ${done ? 'unlocked' : 'locked'}`;
+        div.innerHTML = `
+            <div class="ach-icon">${done ? a.icon : '❓'}</div>
+            <div class="ach-info">
+                <div class="ach-name">${done ? a.name : '???'}</div>
+                <div class="ach-desc">${a.desc}</div>
+            </div>
+            <div class="ach-status">${done ? '✅' : '🔒'}</div>
+        `;
+        list.appendChild(div);
+    }
 }
