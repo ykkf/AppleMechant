@@ -54,6 +54,7 @@ function getInitialGs() {
         totalGold: 0,
         seeds: 0,
         seedUpgrades: {},
+        prestigeCount: 0,
         eraIndex: 0,
         buildings: JSON.parse(JSON.stringify(INITIAL_BUILDINGS)),
         fever: 0,
@@ -175,9 +176,11 @@ function saveGame() {
 function resetPlaythrough() {
     const seeds = gs.seeds;
     const seedUpgrades = gs.seedUpgrades || {};
+    const prestigeCount = gs.prestigeCount || 0;
     gs = getInitialGs();
     gs.seeds = seeds;
     gs.seedUpgrades = seedUpgrades;
+    gs.prestigeCount = prestigeCount;
     el.body.className = ERAS[0].class;
     el.tabPrestige.style.display = 'none';
     el.tabs.forEach(t => t.classList.remove('active'));
@@ -201,9 +204,10 @@ function calculateBuildingProduction() {
 
 function getEraMult() { return ERAS[gs.eraIndex].mult; }
 function getSeedMult() {
-    let mult = 1 + gs.seeds * 0.05;
+    // 対数的減衰: 種が増えるほど1個あたりの効果が薄れる
+    let mult = 1 + Math.log2(gs.seeds + 1) * 0.08;
     const harvestLv = (gs.seedUpgrades && gs.seedUpgrades.harvest) || 0;
-    mult *= (1 + harvestLv * 0.20);
+    mult *= (1 + harvestLv * 0.15);
     return mult;
 }
 function getConvertRate() {
@@ -235,7 +239,9 @@ function calculateTotalPS() {
 }
 
 function getBuildingPrice(basePrice, count) {
-    return Math.floor(basePrice * Math.pow(PRICE_GROWTH, count));
+    // 転生回数に応じて建物価格を+30%ずつスケーリング
+    const prestigeScale = Math.pow(1.3, gs.prestigeCount || 0);
+    return Math.floor(basePrice * Math.pow(PRICE_GROWTH, count) * prestigeScale);
 }
 
 function getTapPower() {
@@ -244,15 +250,15 @@ function getTapPower() {
     if (gs.buildings.farmer) {
         baseTap += gs.buildings.farmer.tapBonus * gs.buildings.farmer.count;
     }
-    let power = baseTap * (1 + 0.02 * gs.seeds);
+    let power = baseTap * (1 + Math.log2(gs.seeds + 1) * 0.03);
     const thunderLv = (gs.seedUpgrades && gs.seedUpgrades.thunder) || 0;
-    power *= (1 + thunderLv * 0.30);
+    power *= (1 + thunderLv * 0.25);
     if (gs.feverActive) power *= FEVER_MULT;
     return power;
 }
 
 function getCritChance() {
-    let chance = 0.05 + 0.001 * gs.seeds;
+    let chance = 0.05 + Math.log2(gs.seeds + 1) * 0.005;
     const luckyLv = (gs.seedUpgrades && gs.seedUpgrades.lucky) || 0;
     chance += luckyLv * 0.03;
     if (gs.feverActive) chance += 0.15;
@@ -369,7 +375,10 @@ function tryEvolve() {
     const nextEraIdx = gs.eraIndex + 1;
     if (nextEraIdx >= ERAS.length) return;
     const nextEra = ERAS[nextEraIdx];
-    if (gs.totalGold >= nextEra.reqTotalGold) {
+    // 転生回数に応じて時代進化の必要Goldをスケーリング (+50%/転生)
+    const prestigeScale = 1 + (gs.prestigeCount || 0) * 0.5;
+    const requiredGold = nextEra.reqTotalGold * prestigeScale;
+    if (gs.totalGold >= requiredGold) {
         gs.eraIndex = nextEraIdx;
         gs.eraBoostTimeLeft = ERA_BOOST_DURATION;
         el.body.className = nextEra.class;
@@ -407,9 +416,12 @@ function tryPrestige() {
     if (gs.eraIndex < ERAS.length - 1) return;
     if (gs.totalGold < 1000000) return;
 
-    const newSeeds = Math.floor(Math.sqrt(gs.totalGold / 100000));
+    // 種獲得量に上限（最大10個/回）、かつ対数的減衰
+    const rawSeeds = Math.floor(Math.sqrt(gs.totalGold / 100000));
+    const newSeeds = Math.min(10, rawSeeds);
     gs.seeds += newSeeds;
-    showNotification(`🌱 転生完了! +${newSeeds}個の種を獲得! 合計${gs.seeds}個`, 'prestige');
+    gs.prestigeCount = (gs.prestigeCount || 0) + 1;
+    showNotification(`🌱 転生完了! +${newSeeds}個の種を獲得! 合計${gs.seeds}個 (${gs.prestigeCount}回目)`, 'prestige');
     resetPlaythrough();
     saveGame();
 }
@@ -654,12 +666,14 @@ function updateUI() {
 
     // Evolution
     const nextIdx = gs.eraIndex + 1;
+    const prestigeScale = 1 + (gs.prestigeCount || 0) * 0.5;
     if (nextIdx < ERAS.length) {
         el.nextEraInfo.style.display = '';
         el.maxEraInfo.style.display = 'none';
         el.nextEraName.textContent = ERAS[nextIdx].name;
-        el.nextEraReq.textContent = formatNum(ERAS[nextIdx].reqTotalGold);
-        el.btnEvolve.disabled = gs.totalGold < ERAS[nextIdx].reqTotalGold;
+        const reqGold = Math.floor(ERAS[nextIdx].reqTotalGold * prestigeScale);
+        el.nextEraReq.textContent = formatNum(reqGold);
+        el.btnEvolve.disabled = gs.totalGold < reqGold;
     } else {
         el.nextEraInfo.style.display = 'none';
         el.maxEraInfo.style.display = '';
