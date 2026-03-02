@@ -14,12 +14,15 @@ const ERAS = [
 ];
 
 const SEED_UPGRADES = [
-    { id: 'harvest', name: '豊穣の種', icon: '🌿', desc: '生産力 +20%', cost: 3, maxLevel: 5, effect: 0.20 },
-    { id: 'thunder', name: '雷の種', icon: '⚡', desc: 'タップ力 +30%', cost: 2, maxLevel: 5, effect: 0.30 },
-    { id: 'lucky', name: '幸運の種', icon: '🎯', desc: 'クリティカル率 +3%', cost: 5, maxLevel: 3, effect: 0.03 },
-    { id: 'golden', name: '黄金の種', icon: '🎰', desc: 'カジノ期待値 +5%', cost: 4, maxLevel: 3, effect: 0.05 },
-    { id: 'apple', name: 'リンゴの種', icon: '🍎', desc: '換金レート改善 -1', cost: 6, maxLevel: 2, effect: 1 },
-    { id: 'flame', name: '炎の種', icon: '🔥', desc: 'フィーバー +3秒', cost: 3, maxLevel: 3, effect: 3 }
+    { id: 'harvest', name: '豊穣の種', icon: '🌿', desc: '生産力 +15%', cost: 3, maxLevel: 10, effect: 0.15 },
+    { id: 'thunder', name: '雷の種', icon: '⚡', desc: 'タップ力 +25%', cost: 2, maxLevel: 10, effect: 0.25 },
+    { id: 'lucky', name: '幸運の種', icon: '🎯', desc: 'クリティカル率 +2%', cost: 5, maxLevel: 5, effect: 0.02 },
+    { id: 'golden', name: '黄金の種', icon: '🎰', desc: 'カジノ期待値 +3%', cost: 4, maxLevel: 5, effect: 0.03 },
+    { id: 'apple', name: 'リンゴの種', icon: '🍎', desc: '換金レート改善 -0.5', cost: 6, maxLevel: 5, effect: 0.5 },
+    { id: 'flame', name: '炎の種', icon: '🔥', desc: 'フィーバー +2秒', cost: 3, maxLevel: 5, effect: 2 },
+    { id: 'discount', name: '値切りの種', icon: '💲', desc: '建物コスト -5%', cost: 8, maxLevel: 5, effect: 0.05 },
+    { id: 'offline', name: '夢の種', icon: '💤', desc: 'オフライン報酬 +20%', cost: 6, maxLevel: 5, effect: 0.20 },
+    { id: 'goldenapple', name: '黄金リンゴの種', icon: '🌟', desc: '黄金リンゴ出現率 +50%', cost: 10, maxLevel: 3, effect: 0.50 },
 ];
 
 const INITIAL_BUILDINGS = {
@@ -153,7 +156,9 @@ function loadSave() {
             const elapsedSec = (now - (gs.lastTick || now)) / 1000;
             if (elapsedSec > 60) {
                 const offlineSec = Math.min(elapsedSec, 8 * 3600);
-                const reward = calculateTotalPS() * offlineSec * 0.5;
+                const offlineLv = (gs.seedUpgrades && gs.seedUpgrades.offline) || 0;
+                const offlineMult = 0.5 + offlineLv * 0.20;
+                const reward = calculateTotalPS() * offlineSec * offlineMult;
                 if (reward > 0) {
                     gs.apples += reward;
                     showNotification(`オフライン報酬: ${formatNum(reward)} 🍎`, 'success');
@@ -213,7 +218,7 @@ function getSeedMult() {
 function getConvertRate() {
     let rate = ERAS[gs.eraIndex].convertRate;
     const appleLv = (gs.seedUpgrades && gs.seedUpgrades.apple) || 0;
-    rate = Math.max(1, rate - appleLv * 1);
+    rate = Math.max(1, rate - appleLv * 0.5);
     return rate;
 }
 
@@ -235,13 +240,17 @@ function calculateTotalPS() {
     prod *= getAchievementBonus();
     if (gs.feverActive) prod *= FEVER_MULT;
     if (gs.eraBoostTimeLeft > 0) prod *= ERA_BOOST_MULT;
+    if (gs.seedBoostTimeLeft && gs.seedBoostTimeLeft > 0) prod *= 3; // 種の献上ブースト
     return prod;
 }
 
 function getBuildingPrice(basePrice, count) {
     // 転生回数に応じて建物価格を+30%ずつスケーリング
     const prestigeScale = Math.pow(1.3, gs.prestigeCount || 0);
-    return Math.floor(basePrice * Math.pow(PRICE_GROWTH, count) * prestigeScale);
+    // 値切りの種でコスト削減
+    const discountLv = (gs.seedUpgrades && gs.seedUpgrades.discount) || 0;
+    const discountMult = Math.max(0.5, 1 - discountLv * 0.05);
+    return Math.floor(basePrice * Math.pow(PRICE_GROWTH, count) * prestigeScale * discountMult);
 }
 
 function getTapPower() {
@@ -268,7 +277,7 @@ function getCritChance() {
 function getFeverDuration() {
     let dur = FEVER_DURATION;
     const flameLv = (gs.seedUpgrades && gs.seedUpgrades.flame) || 0;
-    dur += flameLv * 3;
+    dur += flameLv * 2;
     return dur;
 }
 
@@ -448,6 +457,35 @@ function renderSeedShop() {
     const list = document.getElementById('seed-shop-list');
     if (!list) return;
     list.innerHTML = '';
+
+    // Seed sacrifice button
+    const sacrificeDiv = document.createElement('div');
+    const seedBoostActive = gs.seedBoostTimeLeft && gs.seedBoostTimeLeft > 0;
+    const canSacrifice = gs.seeds >= 5 && !seedBoostActive;
+    sacrificeDiv.className = `seed-upgrade-item seed-sacrifice ${!canSacrifice ? 'disabled' : ''}`;
+    sacrificeDiv.innerHTML = `
+        <div class="b-icon">🌞</div>
+        <div class="b-info">
+            <div class="b-name">種の献上 <span class="b-count" style="background:#ff6b6b;">${seedBoostActive ? `✅ ${Math.ceil(gs.seedBoostTimeLeft)}s` : '消費'}</span></div>
+            <div class="b-desc">種5個消費 → 5分間 生産力x3ブースト</div>
+        </div>
+        <div class="b-action">
+            <button class="action-btn seed-buy-btn" style="margin:0; padding:6px; font-size:13px; background:${canSacrifice ? '#e74c3c' : '#555'};" ${!canSacrifice ? 'disabled' : ''}>
+                ${seedBoostActive ? '発動中' : '5 🌱'}
+            </button>
+        </div>
+    `;
+    if (canSacrifice) {
+        sacrificeDiv.querySelector('.seed-buy-btn').addEventListener('click', () => activateSeedBoost());
+    }
+    list.appendChild(sacrificeDiv);
+
+    // Separator
+    const sep = document.createElement('div');
+    sep.style.cssText = 'border-top:1px solid var(--border-color); margin:8px 0;';
+    list.appendChild(sep);
+
+    // Upgrades
     for (const u of SEED_UPGRADES) {
         const lv = (gs.seedUpgrades && gs.seedUpgrades[u.id]) || 0;
         const maxed = lv >= u.maxLevel;
@@ -472,6 +510,18 @@ function renderSeedShop() {
         }
         list.appendChild(div);
     }
+}
+
+function activateSeedBoost() {
+    if (gs.seeds < 5) return;
+    if (gs.seedBoostTimeLeft && gs.seedBoostTimeLeft > 0) return;
+    gs.seeds -= 5;
+    gs.seedBoostTimeLeft = 300; // 5 minutes
+    showNotification('🌞 種の献上! 5分間 生産力x3 ブースト!', 'prestige');
+    if ('vibrate' in navigator) navigator.vibrate([50, 30, 50, 30, 100]);
+    renderSeedShop();
+    updateUI();
+    saveGame();
 }
 
 // --- Casino ---
@@ -612,9 +662,20 @@ function gameLoop() {
         if (gs.eraBoostTimeLeft <= 0) gs.eraBoostTimeLeft = 0;
     }
 
-    // Golden apple random event
-    if (Math.random() < GOLDEN_APPLE_CHANCE && !el.goldenApple.style.display !== 'block') {
+    // Golden apple random event (with seed upgrade bonus)
+    const goldenAppleLv = (gs.seedUpgrades && gs.seedUpgrades.goldenapple) || 0;
+    const goldenAppleChance = GOLDEN_APPLE_CHANCE * (1 + goldenAppleLv * 0.50);
+    if (Math.random() < goldenAppleChance && !el.goldenApple.style.display !== 'block') {
         showGoldenApple();
+    }
+
+    // Seed boost timer
+    if (gs.seedBoostTimeLeft && gs.seedBoostTimeLeft > 0) {
+        gs.seedBoostTimeLeft -= dt;
+        if (gs.seedBoostTimeLeft <= 0) {
+            gs.seedBoostTimeLeft = 0;
+            showNotification('🌞 種の献上ブーストが終了しました', 'info');
+        }
     }
 
     updateUI();
